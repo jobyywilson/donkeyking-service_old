@@ -3,7 +3,7 @@ const app = express()
 const server = require('http').Server(app)
 const io = require('socket.io')(server)
 const { v4: uuidV4 } = require('uuid')
-
+const port = process.env.PORT || 3000
 
 app.get('/', (req, res) => {
   console.log('Request 1')
@@ -53,4 +53,4 @@ io.on('connection', socket => {
   })
 })
 
-server.listen(3000)
+server.listen(port)
