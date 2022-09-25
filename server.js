@@ -29,7 +29,7 @@ io.on('connection', socket => {
     }
     
     // if userId is not null then user is trying to rejoin a room
-    if(room_details && room_details['isGameStarted']){
+    if(room_details && room_details['isGameInProgress']){
       let userInfo = room_details['userInfo']
       if(userInfo[userId]){
         let userReconnectInfo = {'peerId':peerId,'nickName':nickName,'userId':userId}
@@ -40,33 +40,65 @@ io.on('connection', socket => {
       return;
     }
   })
-  socket.on('join-room', (roomId, peerId, nickName,secretId) => {
+
+  
+
+
+  socket.on('join-room', (roomId, userId, nickName,secretId) => {
     let room_details = roomListDetails[roomId]
-
     socket.join(roomId)
-    if(!room_details){
-      room_details = {}
-      room_details['userInfo'] = {}
+    if(room_details && room_details.isGameInProgress){
+      socket.emit('game-already-started','Game already started')
+    }else{
+      if(!room_details){
+        room_details = {}
+        room_details['userInfo'] = {}
+      }
+      room_details['userInfo'][userId] = {}
+      room_details['userInfo'][userId]['secretId'] = secretId
+      room_details['userInfo'][userId]['nickName'] = nickName
+      roomListDetails[roomId] = room_details
+      let userList = []
+      for(let [key, value] of Object.entries(room_details['userInfo'])){
+        let user = {}
+        user['userId'] = key
+        user['nickName'] = value['nickName']
+        userList.push(user)
+      }
+      io.in(roomId).emit('user-update', userList)
+      //socket.to(roomId).broadcast.emit('user-connected', userInfo)
+      console.log(socket.adapter.rooms[roomId])
     }
-    let userId = uuidV4()
-    room_details['userInfo'][userId] = {}
-    room_details['userInfo'][userId]['secretId'] = secretId
-    roomListDetails[roomId] = room_details
-
-    let userInfo = {'peerId':peerId,'nickName':nickName,'userId':userId}
-    io.in(roomId).emit('user-connected', userInfo)
-    //socket.to(roomId).broadcast.emit('user-connected', userInfo)
-    console.log(socket.adapter.rooms[roomId])
-    socket.on('disconnect', () => {
-      socket.to(roomId).broadcast.emit('user-disconnected', peerId,userId,roomId)
+    
+    
+    socket.on('submit-card', (data) => {
+      socket.to(roomId).broadcast.emit('card-changed', data)
     })
+    socket.on('disconnect', (roomId,userId) => {
+      let room_details = roomListDetails[roomId]
+      if(room_details && room_details['userInfo'] && room_details['userInfo'][userId]){
+        delete room_details['userInfo'][userId]
+        socket.leave(userId)
+        console.log(userId + ' left')
+        if(Object.entries(room_details['userInfo']).length ==0){
+          room_details.isGameInProgress = false
+        }else{
+          socket.to(roomId).broadcast.emit('user-disconnected', userId)
+        }
+      }
+  
+      
+    })
+
   })
+
+
   socket.on('stop-game', (roomId) => {
     roomListDetails[roomId] = null
   })
   socket.on('start-game', (roomId,userInfo) => {
-    let cards=["AC","AD","AH","AS","2C","2D","2H","2S","3C","3D","3H","3S","4C","4D","4H","4S","5C","5D","5H","5S","6C","6D","6H","6S","7C","7D","7H","7S","8C","8D","8H","8S","9C","9D","9H","9S","10C","10D","10H","10S","JC","JD","JH","JS","QC","QD","QH","QS","KC","KD","KH","KS"]
-    //let cards=["AC","2C","3S","AD","2D","3H"]
+    //let cards=["AC","AD","AH","AS","2C","2D","2H","2S","3C","3D","3H","3S","4C","4D","4H","4S","5C","5D","5H","5S","6C","6D","6H","6S","7C","7D","7H","7S","8C","8D","8H","8S","9C","9D","9H","9S","10C","10D","10H","10S","JC","JD","JH","JS","QC","QD","QH","QS","KC","KD","KH","KS"]
+    let cards=["AC","2C","3S","AD","2D","3H"]
 
     let shuffledCards = cards.sort(function(){return 0.5-Math.random()})
     let clients_in_the_room = io.sockets.adapter.rooms[roomId].sockets; 
@@ -92,7 +124,7 @@ io.on('connection', socket => {
       index++;
     }
     console.log(deck)
-    roomListDetails[roomId]['isGameStarted'] = true
+    roomListDetails[roomId]['isGameInProgress'] = true
     io.in(roomId).emit('start', deck)
   })
 })
